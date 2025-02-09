@@ -28,6 +28,7 @@ gdr::Result<ReplayType> convert(std::span<uint8_t> data, std::function<void(nloh
 	replay.seed = replayJson["seed"];
 	replay.coins = replayJson["coins"];
 	replay.ldm = replayJson["ldm"];
+	replay.platformer = false;
 	
 	if(replayJson.contains("framerate"))
 		replay.framerate = replayJson["framerate"];
@@ -41,6 +42,9 @@ gdr::Result<ReplayType> convert(std::span<uint8_t> data, std::function<void(nloh
 		input.button = inputJson["btn"];
 		input.player2 = inputJson["2p"];
 		input.down = inputJson["down"];
+
+		if(input.button != 1)
+			replay.platformer = true;
 
         if(inputExt)
             inputExt(inputJson, input);

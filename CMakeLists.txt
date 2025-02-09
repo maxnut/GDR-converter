@@ -15,7 +15,7 @@ add_executable(GDRconverter_test
     test/main.cpp
 )
 
-CPMAddPackage("gh:maxnut/GDReplayFormat#b65e2f1")
+CPMAddPackage("gh:maxnut/GDReplayFormat#gdr2")
 
 target_link_libraries(GDRconverter_test PRIVATE GDRconverter libGDR)
 
