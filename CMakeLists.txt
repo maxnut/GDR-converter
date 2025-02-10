@@ -3,6 +3,10 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(cmake/CPM.cmake)
 
+if (DEFINED ENV{GITHUB_ACTIONS})
+    file(REMOVE_RECURSE ${CMAKE_CURRENT_SOURCE_DIR}/cpm-cache/gdreplayformat)
+endif()
+
 project(GDRconverter)
 
 add_library(GDRconverter INTERFACE)
