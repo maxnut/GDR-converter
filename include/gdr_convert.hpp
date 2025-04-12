@@ -1,5 +1,6 @@
 #include "json.hpp"
 
+#include <charconv>
 #include <gdr/gdr.hpp>
 #include <functional>
 
@@ -21,7 +22,9 @@ gdr::Result<ReplayType> convert(std::span<uint8_t> data, std::function<void(nloh
 	replay.description = replayJson["description"];
 	replay.duration = replayJson["duration"];
 	replay.botInfo.name = replayJson["bot"]["name"];
-	replay.botInfo.version = std::stoi(replayJson["bot"]["version"].get<std::string>());
+	replay.botInfo.version = 1;
+	std::string botVersion = replayJson["bot"]["version"].get<std::string>();
+	std::from_chars(botVersion.data(), botVersion.data() + botVersion.size(), replay.botInfo.version);
 	replay.levelInfo.id = replayJson["level"]["id"];
 	replay.levelInfo.name = replayJson["level"]["name"];
 	replay.author = replayJson["author"];
