@@ -1,60 +1,91 @@
-#include "json.hpp"
+#pragma once
+#include <matjson/msgpack.hpp>
 
 #include <charconv>
+#include <cmath>
 #include <gdr/gdr.hpp>
-#include <functional>
 
 namespace gdr {
 
 template<typename ReplayType, typename InputType>
-gdr::Result<ReplayType> convert(std::span<uint8_t> data, std::function<void(nlohmann::json&, ReplayType&)> replayExt = nullptr, std::function<void(nlohmann::json&, InputType&)> inputExt = nullptr) {
-    ReplayType replay;
-	nlohmann::json replayJson;
+gdr::Result<ReplayType> convert(
+    std::span<uint8_t const> data,
+    auto&& replayExt,
+    auto&& inputExt
+) {
+    auto res = matjson::parse(std::string_view(reinterpret_cast<char const*>(data.data()), data.size()))
+        .orElse([&](auto) { return matjson::msgpack::parse(data); });
 
-    replayJson = nlohmann::json::parse(data, nullptr, false);
-    if (replayJson.is_discarded()) {
-        replayJson = nlohmann::json::from_msgpack(data, true, false);
-        if (replayJson.is_discarded())
-            return gdr::Err<ReplayType>("Invalid data");
+    if (!res) {
+        return gdr::Err<ReplayType>(std::move(res.unwrapErr().message));
     }
 
-	replay.gameVersion = static_cast<int>(replayJson["gameVersion"].get<float>() * 1000.f);
-	replay.description = replayJson["description"];
-	replay.duration = replayJson["duration"];
-	replay.botInfo.name = replayJson["bot"]["name"];
-	replay.botInfo.version = 1;
-	std::string botVersion = replayJson["bot"]["version"].get<std::string>();
-	std::from_chars(botVersion.data(), botVersion.data() + botVersion.size(), replay.botInfo.version);
-	replay.levelInfo.id = replayJson["level"]["id"];
-	replay.levelInfo.name = replayJson["level"]["name"];
-	replay.author = replayJson["author"];
-	replay.seed = replayJson["seed"];
-	replay.coins = replayJson["coins"];
-	replay.ldm = replayJson["ldm"];
-	replay.platformer = false;
-	
-	if(replayJson.contains("framerate"))
-		replay.framerate = replayJson["framerate"];
+    ReplayType replay;
+    auto json = std::move(res).unwrap();
 
-    if(replayExt)
-        replayExt(replayJson, replay);
+#define GDR_UNWRAP_INTO(var, ...) \
+    auto GEODE_CONCAT(res, __LINE__) = __VA_ARGS__; \
+    if (GEODE_CONCAT(res, __LINE__).isErr()) \
+        return gdr::Err<ReplayType>(std::move(GEODE_CONCAT(res, __LINE__)).unwrapErr()); \
+    var = std::move(GEODE_CONCAT(res, __LINE__)).unwrap()
 
-	for (nlohmann::json& inputJson : replayJson["inputs"]) {
-		InputType input;
-		input.frame = inputJson["frame"];
-		input.button = inputJson["btn"];
-		input.player2 = inputJson["2p"];
-		input.down = inputJson["down"];
+    GDR_UNWRAP_INTO(auto gameVersion, json["gameVersion"].asDouble());
+    replay.gameVersion = std::round(gameVersion * 1000.0);
 
-		if(input.button != 1)
-			replay.platformer = true;
+    GDR_UNWRAP_INTO(replay.description, json["description"].asString());
+    GDR_UNWRAP_INTO(replay.duration, json["duration"].asDouble());
+    GDR_UNWRAP_INTO(replay.botInfo.name, json["bot"]["name"].asString());
 
-        if(inputExt)
+    replay.botInfo.version = 1;
+    GDR_UNWRAP_INTO(auto botVersion, json["bot"]["version"].asString());
+    std::from_chars(botVersion.data(), botVersion.data() + botVersion.size(), replay.botInfo.version);
+
+    GDR_UNWRAP_INTO(replay.levelInfo.id, json["level"]["id"].asUInt());
+    GDR_UNWRAP_INTO(replay.levelInfo.name, json["level"]["name"].asString());
+    GDR_UNWRAP_INTO(replay.author, json["author"].asString());
+    GDR_UNWRAP_INTO(replay.seed, json["seed"].asInt());
+    GDR_UNWRAP_INTO(replay.coins, json["coins"].asInt());
+    GDR_UNWRAP_INTO(replay.ldm, json["ldm"].asBool());
+    replay.platformer = false;
+
+    if (json.contains("framerate")) {
+        GDR_UNWRAP_INTO(replay.framerate, json["framerate"].asDouble());
+    }
+
+    if constexpr (std::is_invocable_v<decltype(replayExt), matjson::Value&, ReplayType&>) {
+        replayExt(json, replay);
+    }
+
+    for (auto& inputJson : json["inputs"]) {
+        InputType input;
+        GDR_UNWRAP_INTO(input.frame, inputJson["frame"].asUInt());
+        GDR_UNWRAP_INTO(input.button, inputJson["btn"].asUInt());
+        GDR_UNWRAP_INTO(input.player2, inputJson["2p"].asBool());
+        GDR_UNWRAP_INTO(input.down, inputJson["down"].asBool());
+
+        if(input.button != 1)
+            replay.platformer = true;
+
+        if constexpr (std::is_invocable_v<decltype(inputExt), matjson::Value&, InputType&>) {
             inputExt(inputJson, input);
-        
-		replay.inputs.push_back(input);
-	}
-	return gdr::Ok<ReplayType>(replay);
+        }
+
+        replay.inputs.push_back(std::move(input));
+    }
+
+#undef GDR_UNWRAP_INTO
+
+    return gdr::Ok<ReplayType>(std::move(replay));
+}
+
+template<typename ReplayType, typename InputType>
+gdr::Result<ReplayType> convert(std::span<uint8_t const> data) {
+    return convert<ReplayType, InputType>(data, nullptr, nullptr);
+}
+
+template<typename ReplayType, typename InputType>
+gdr::Result<ReplayType> convert(std::span<uint8_t const> data, auto&& replayExt) {
+    return convert<ReplayType, InputType>(data, std::forward<decltype(replayExt)>(replayExt), nullptr);
 }
 
 }
